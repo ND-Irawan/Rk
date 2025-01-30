@@ -119,7 +119,6 @@
  */
 
 struct menu_device {
-	int		last_state_idx;
 	int             needs_update;
 	int             tick_wakeup;
 
@@ -373,9 +372,8 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	idx = -1;
 	for (i = first_idx; i < drv->state_count; i++) {
 		struct cpuidle_state *s = &drv->states[i];
-		struct cpuidle_state_usage *su = &dev->states_usage[i];
 
-		if (s->disabled || su->disable)
+		if (dev->states_usage[i].disable)
 			continue;
 		if (idx == -1)
 			idx = i; /* first enabled state */
@@ -404,7 +402,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 			    s->target_residency <= ktime_to_us(delta_next))
 				idx = i;
 
-			goto out;
+			return idx;
 		}
 		if (s->exit_latency > latency_req) {
 			/*
@@ -440,8 +438,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 			 * tick, so try to correct that.
 			 */
 			for (i = idx - 1; i >= 0; i--) {
-				if (drv->states[i].disabled ||
-				    dev->states_usage[i].disable)
+				if (dev->states_usage[i].disable)
 					continue;
 
 				idx = i;
@@ -451,10 +448,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 		}
 	}
 
-out:
-	data->last_state_idx = idx;
-
-	return data->last_state_idx;
+	return idx;
 }
 
 /**
@@ -469,7 +463,7 @@ static void menu_reflect(struct cpuidle_device *dev, int index)
 {
 	struct menu_device *data = this_cpu_ptr(&menu_devices);
 
-	data->last_state_idx = index;
+	dev->last_state_idx = index;
 	data->needs_update = 1;
 	data->tick_wakeup = tick_nohz_idle_got_tick();
 }
@@ -482,7 +476,7 @@ static void menu_reflect(struct cpuidle_device *dev, int index)
 static void menu_update(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 {
 	struct menu_device *data = this_cpu_ptr(&menu_devices);
-	int last_idx = data->last_state_idx;
+	int last_idx = dev->last_state_idx;
 	struct cpuidle_state *target = &drv->states[last_idx];
 	unsigned int measured_us;
 	unsigned int new_factor;
@@ -525,7 +519,7 @@ static void menu_update(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 		measured_us = data->next_timer_us;
 	} else {
 		/* measured value */
-		measured_us = cpuidle_get_last_residency(dev);
+		measured_us = dev->last_residency;
 
 		/* Deduct exit latency */
 		if (measured_us > 2 * target->exit_latency)

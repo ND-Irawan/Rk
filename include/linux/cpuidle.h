@@ -29,10 +29,15 @@ struct cpuidle_driver;
  * CPUIDLE DEVICE INTERFACE *
  ****************************/
 
+#define CPUIDLE_STATE_DISABLED_BY_USER		BIT(0)
+#define CPUIDLE_STATE_DISABLED_BY_DRIVER	BIT(1)
+
 struct cpuidle_state_usage {
 	unsigned long long	disable;
 	unsigned long long	usage;
 	unsigned long long	time; /* in US */
+	unsigned long long	above; /* Number of times it's been too deep */
+	unsigned long long	below; /* Number of times it's been too shallow */
 #ifdef CONFIG_SUSPEND
 	unsigned long long	s2idle_usage;
 	unsigned long long	s2idle_time; /* in US */
@@ -84,6 +89,7 @@ struct cpuidle_device {
 	unsigned int		poll_time_limit:1;
 	unsigned int		cpu;
 
+	int			last_state_idx;
 	int			last_residency;
 	struct cpuidle_state_usage	states_usage[CPUIDLE_STATE_MAX];
 	struct cpuidle_state_kobj *kobjs[CPUIDLE_STATE_MAX];
@@ -99,16 +105,6 @@ struct cpuidle_device {
 
 DECLARE_PER_CPU(struct cpuidle_device *, cpuidle_devices);
 DECLARE_PER_CPU(struct cpuidle_device, cpuidle_dev);
-
-/**
- * cpuidle_get_last_residency - retrieves the last state's residency time
- * @dev: the target CPU
- */
-static inline int cpuidle_get_last_residency(struct cpuidle_device *dev)
-{
-	return dev->last_residency;
-}
-
 
 /****************************
  * CPUIDLE DRIVER INTERFACE *
@@ -290,5 +286,13 @@ static inline int cpuidle_register_governor(struct cpuidle_governor *gov)
 
 #define CPU_PM_CPU_IDLE_ENTER_RETENTION(low_level_idle_enter, idx)	\
 	__CPU_PM_CPU_IDLE_ENTER(low_level_idle_enter, idx, 1)
+
+#ifdef CONFIG_SMP
+void cpuidle_set_idle_cpu(unsigned int cpu);
+void cpuidle_clear_idle_cpu(unsigned int cpu);
+#else
+static inline void cpuidle_set_idle_cpu(unsigned int cpu) { }
+static inline void cpuidle_clear_idle_cpu(unsigned int cpu) { }
+#endif
 
 #endif /* _LINUX_CPUIDLE_H */

@@ -540,16 +540,19 @@ static void bcl_evaluate_soc(struct work_struct *work)
 		return;
 
 	mutex_lock(&perph_data->state_trans_lock);
-	if (!perph_data->irq_enabled)
-		goto eval_exit;
-	if (battery_percentage > perph_data->trip_temp)
+	if (!perph_data->irq_enabled) {
+		if (battery_percentage <= perph_data->trip_temp)
+			goto eval_exit;
+	} else if (battery_percentage > perph_data->trip_temp)
 		goto eval_exit;
 
 	perph_data->trip_val = battery_percentage;
 	mutex_unlock(&perph_data->state_trans_lock);
+
+	return; //return before thermal handle trips with percentage
+
 	of_thermal_handle_trip(perph_data->tz_dev);
 
-	return;
 eval_exit:
 	mutex_unlock(&perph_data->state_trans_lock);
 }
@@ -757,10 +760,10 @@ static int bcl_probe(struct platform_device *pdev)
 	}
 
 	bcl_get_devicetree_data(pdev);
+	bcl_configure_lmh_peripheral();
 	bcl_probe_ibat(pdev);
 	bcl_probe_vbat(pdev);
 	bcl_probe_soc(pdev);
-	bcl_configure_lmh_peripheral();
 
 	dev_set_drvdata(&pdev->dev, bcl_perph);
 	ret = bcl_write_register(BCL_MONITOR_EN, BIT(7));

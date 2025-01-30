@@ -41,6 +41,7 @@
 #include "lpm-levels.h"
 #include <trace/events/power.h>
 #include "../clk/clk.h"
+#include "../../kernel/sched/sched.h"
 #define CREATE_TRACE_POINTS
 #include <trace/events/trace_msm_low_power.h>
 
@@ -719,7 +720,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 		min_residency = pwr_params->min_residency;
 		max_residency = pwr_params->max_residency;
 
-		if (latency_us < lvl_latency_us)
+		if (latency_us <= lvl_latency_us)
 			break;
 
 		calculate_next_wakeup(&next_wakeup_us, next_event_us,
@@ -1056,7 +1057,7 @@ static int cluster_select(struct lpm_cluster *cluster, bool from_idle,
 					&level->num_cpu_votes))
 			continue;
 
-		if (from_idle && latency_us < pwr_params->exit_latency)
+		if (from_idle && latency_us <= pwr_params->exit_latency)
 			break;
 
 		if (sleep_us < (pwr_params->exit_latency +
@@ -1350,6 +1351,48 @@ unlock_and_return:
 	return state_id;
 }
 
+static int psci_enter_idle(struct cpuidle_device *dev, struct lpm_cpu *cpu,
+			    int idx, bool from_idle)
+{
+	int affinity_level = 0, state_id = 0, power_state = 0;
+	bool success = false;
+	/*
+	 * idx = 0 is the default LPM state
+	 */
+
+	if (!idx || is_reserved(dev->cpu)) {
+		if (cpu->bias)
+			biastimer_start(cpu->bias);
+		stop_critical_timings();
+		cpu_do_idle();
+		start_critical_timings();
+		cpuidle_clear_idle_cpu(dev->cpu);
+		return true;
+	}
+
+	if (cpu->levels[idx].use_bc_timer) {
+		if (tick_broadcast_enter())
+			return success;
+	}
+
+	state_id = get_cluster_id(cpu->parent, &affinity_level, from_idle);
+	power_state = PSCI_POWER_STATE(cpu->levels[idx].is_reset);
+	affinity_level = PSCI_AFFINITY_LEVEL(affinity_level);
+	state_id += power_state + affinity_level + cpu->levels[idx].psci_id;
+
+	stop_critical_timings();
+
+	success = !arm_cpuidle_suspend(state_id);
+
+	start_critical_timings();
+	cpuidle_clear_idle_cpu(dev->cpu);
+
+	if (cpu->levels[idx].use_bc_timer)
+		tick_broadcast_exit();
+
+	return success;
+}
+
 static bool psci_enter_sleep(struct lpm_cpu *cpu, int idx, bool from_idle)
 {
 	int affinity_level = 0, state_id = 0, power_state = 0;
@@ -1470,7 +1513,7 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 	if (need_resched())
 		goto exit;
 
-	success = psci_enter_sleep(cpu, idx, true);
+	success = psci_enter_idle(dev, cpu, idx, true);
 
 exit:
 	end_time = ktime_to_ns(ktime_get());
@@ -1486,7 +1529,8 @@ exit:
 		clusttimer_cancel();
 	}
 	if (cpu->bias) {
-		biastimer_cancel();
+                if (!idx)
+			biastimer_cancel();
 		cpu->bias = 0;
 	}
 	local_irq_enable();
@@ -1598,9 +1642,10 @@ static int cluster_cpuidle_register(struct lpm_cluster *cl)
 			snprintf(st->name, CPUIDLE_NAME_LEN, "C%u\n", i);
 			strlcpy(st->desc, cpu_level->name, CPUIDLE_DESC_LEN);
 
-			st->flags = 0;
-			st->exit_latency = cpu_level->pwr.exit_latency;
-			st->target_residency = 0;
+			if (cpu_level->pwr.local_timer_stop)
+				st->flags |= CPUIDLE_FLAG_TIMER_STOP;
+			st->exit_latency = cpu_level->pwr.entry_latency + cpu_level->pwr.exit_latency;
+			st->target_residency = cpu_level->pwr.min_residency;
 			st->enter = lpm_cpuidle_enter;
 			if (i == lpm_cpu->nlevels - 1)
 				st->enter_s2idle = lpm_cpuidle_s2idle;
