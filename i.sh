@@ -59,7 +59,7 @@ if [ "$device" = "apollo" ]; then
   # Remove vendor_boot block for apollo
   VENDOR_BOOT_LINES_REMOVED=1
 else
-  KERNEL_DEFCONFIG=alioth_defconfig
+  KERNEL_DEFCONFIG=kona-perf_defconfig
   DEVICE_NAME1="alioth"
   DEVICE_NAME2="aliothin"
   IS_SLOT_DEVICE=1
@@ -86,7 +86,7 @@ fi
 
 # kernel-Compilation
 
-make O=out ARCH=arm64 alioth_defconfig
+make O=out ARCH=arm64 kona-perf_defconfig
 nd () {
 make -j$(nproc --all) O=out LLVM=1 LLVM_IAS=1 \
 ARCH=arm64 \
