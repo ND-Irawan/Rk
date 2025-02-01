@@ -111,20 +111,6 @@
 /* The target supports ringbuffer level APRIV */
 #define ADRENO_APRIV BIT(21)
 /*
- * Use SHMEM for page allocation. There will be no support
- * for pools and higher order pages.
- */
-#define ADRENO_USE_SHMEM BIT(22)
-/*
- * Make pages available for reclaim. Process foreground/background
- * activity is known through sysfs exposed per process. Based on
- * this, pages are unpinned and made available to Per Process
- * Reclaim (PPR). SHMEM is used for allocation of pages and
- * support for pools is removed.
- */
-#define ADRENO_PROCESS_RECLAIM BIT(23)
-
-/*
  * Adreno GPU quirks - control bits for various workarounds
  */
 
@@ -806,6 +792,7 @@ struct adreno_coresight_attr {
 	struct adreno_coresight_register *reg;
 };
 
+#if IS_ENABLED(CONFIG_CORESIGHT_ADRENO)
 ssize_t adreno_coresight_show_register(struct device *device,
 		struct device_attribute *attr, char *buf);
 
@@ -818,6 +805,12 @@ ssize_t adreno_coresight_store_register(struct device *dev,
 		adreno_coresight_show_register, \
 		adreno_coresight_store_register), \
 		(_reg), }
+#else
+#define ADRENO_CORESIGHT_ATTR(_attrname, _reg) \
+	struct adreno_coresight_attr coresight_attr_##_attrname  = { \
+		__ATTR_NULL, \
+		(_reg), }
+#endif /* CONFIG_CORESIGHT_ADRENO */
 
 /**
  * struct adreno_coresight - GPU specific coresight definition
@@ -1089,12 +1082,22 @@ void adreno_fault_skipcmd_detached(struct adreno_device *adreno_dev,
 					 struct adreno_context *drawctxt,
 					 struct kgsl_drawobj *drawobj);
 
+#if IS_ENABLED(CONFIG_CORESIGHT_ADRENO)
 int adreno_coresight_init(struct adreno_device *adreno_dev);
 
 void adreno_coresight_start(struct adreno_device *adreno_dev);
 void adreno_coresight_stop(struct adreno_device *adreno_dev);
 
 void adreno_coresight_remove(struct adreno_device *adreno_dev);
+#else
+static inline int adreno_coresight_init(struct adreno_device *adreno_dev)
+{
+	return -ENODEV;
+}
+static inline void adreno_coresight_start(struct adreno_device *adreno_dev) { }
+static inline void adreno_coresight_stop(struct adreno_device *adreno_dev) { }
+static inline void adreno_coresight_remove(struct adreno_device *adreno_dev) { }
+#endif /* CONFIG_CORESIGHT_ADRENO */
 
 bool adreno_hw_isidle(struct adreno_device *adreno_dev);
 
