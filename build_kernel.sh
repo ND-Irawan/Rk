@@ -8,7 +8,7 @@ KERNEL_DEFCONFIG=vendor/kona-perf_defconfig
 export PATH="$MAIN/clang/bin:$PATH"
 export ARCH=arm64
 export SUBARCH=arm64
-CLANGDIR="/home/rve/RvClang"
+CLANGDIR="/workspace/build/clang"
 
 KERNEL_DIR=`pwd`
 ZIMAGE_DIR="$KERNEL_DIR/out/arch/arm64/boot"
